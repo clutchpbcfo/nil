@@ -1,0 +1,19 @@
+<svg viewBox="0 0 1180 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="NIL logo">
+  <defs>
+    <radialGradient id="spadeGlow" cx="50%" cy="42%" r="65%">
+      <stop offset="0%" stop-color="#ff9ccb"/>
+      <stop offset="45%" stop-color="#FF5FA2"/>
+      <stop offset="100%" stop-color="#FF5FA2" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="wmG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#FF5FA2"/>
+    </linearGradient>
+  </defs>
+  <!-- mark: spade with glow -->
+  <circle cx="172" cy="176" r="124" fill="url(#spadeGlow)" opacity="0.55"/>
+  <text x="172" y="266" text-anchor="middle" font-family="'Chakra Petch','Arial Black',sans-serif" font-weight="700" font-size="230" fill="#FF5FA2">&#9824;</text>
+  <!-- wordmark -->
+  <text x="338" y="252" font-family="'Chakra Petch','Arial Black',sans-serif" font-weight="700" font-size="212" letter-spacing="-4" fill="url(#wmG)">NIL</text>
+  <text x="344" y="308" font-family="'JetBrains Mono',monospace" font-weight="600" font-size="29" letter-spacing="8.5" fill="#8C8CB0">BID NOTHING &#183; TAKE IT ALL</text>
+</svg>
