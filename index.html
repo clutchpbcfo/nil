@@ -454,7 +454,7 @@ if(sk)sk.addEventListener('click',reveal);
   <div class="sheet">
     <div class="kick">● <span id="lbSeason">Season</span></div>
     <h2>Leaderboard</h2>
-    <p>Top chip earners this season — ends in <b id="lbEnds">—</b>. Win rounds, hit nils, check in daily to climb.</p>
+    <p>Top players — server-ranked — ends in <b id="lbEnds">—</b>. Win rounds, hit nils, check in daily to climb.</p>
     <div class="lb-list" id="lbList"></div>
     <button class="btn btn-ghost" id="lbClose">Close</button>
   </div>
@@ -587,24 +587,42 @@ function cardInner(c){
 /* ============================================================
    GAME STATE + FLOW
    ============================================================ */
+const API="https://www.stakit.app/api/nil";
 const S={};
-function freshGame(){S.score=[0,0];S.bags=[0,0];S.round=0;S.handle=loadHandle();}
-function dealRound(){
-  S.round++;S.hands=[[],[],[],[]];
-  const deck=shuffle(makeDeck());for(let i=0;i<52;i++)S.hands[i%4].push(deck[i]);
-  S.hands.forEach(sortHand);
-  S.bids=[null,null,null,null];S.tricks=[0,0,0,0];S.spadesBroken=false;S.trick=[];S.leader=1;S.phase="bidding";
-  $("rnd").textContent="Round "+S.round;$("trumpNote").textContent="♠ trump";
-  renderScores();renderPills();clearTrick();renderHandDeal();
-  beginBidding();
+async function NET(op,body){
+  const opt = (body!==undefined) ? {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)} : {};
+  const r=await fetch(API+"?op="+op,opt);
+  return r.json();
+}
+function freshGame(){S.handle=loadHandle();S.resolve=null;S.gameId=null;}
+function applyState(st){
+  S.gameId=st.gameId; S.phase=st.phase; S.round=st.round;
+  S.hands=[st.you||[],[],[],[]];
+  S.bids=st.bids||[null,null,null,null]; S.tricks=st.tricks||[0,0,0,0];
+  S.score=st.score||[0,0]; S.bags=st.bags||[0,0];
+  S.leader=st.leader; S.spadesBroken=!!st.spadesBroken; S.trick=st.trick||[];
+  S.turn=st.turn; S.won=st.won;
+}
+async function startGameFlow(){
+  $("actionbar").innerHTML=`<div class="coach"><span class="ico">♠</span><span class="txt">Shuffling the deck…</span></div>`;
+  let st; try{ st=await NET("start",{handle:S.handle||""}); }
+  catch(e){ $("actionbar").innerHTML=`<div class="coach warn"><span class="ico">⚠️</span><span class="txt">Could not reach the table. Check your connection and tap AGAIN.</span></div>`; return; }
+  applyState(st);
+  $("rnd").textContent="Round "+S.round; $("trumpNote").textContent="♠ trump";
+  renderScores(); renderPills(); $("trick").innerHTML=""; renderHandDeal();
+  setTimeout(beginBidding,640);
 }
 async function beginBidding(){
-  for(const seat of [1,2,3,0]){
-    setActive(seat);
-    if(seat===0){await humanBid();}
-    else{await wait(560);S.bids[seat]=shouldBidNil(S.hands[seat])?0:estimateBid(S.hands[seat]);Sound.bid();renderPills();}
-  }
-  setActive(-1);startPlay();
+  S.resolve=null; renderPills();
+  for(const seat of [1,2,3]){ setActive(seat); Sound.bid(); await wait(300); }   // bots locked their bids
+  setActive(0);
+  const rec=estimateBid(S.hands[0]);
+  $("actionbar").innerHTML=
+    `<div class="coach"><span class="ico">🧠</span><span class="txt"><b>Your call.</b> ${bidRationale(S.hands[0])} → worth about <span class="li">${rec}</span> trick${rec===1?"":"s"}. <b>NIL</b> = bet on zero (+100 / −100).</span></div>`+
+    `<div class="bidgrid" id="bg"></div>`;
+  const g=$("bg");
+  const mk=(lbl,v,cls)=>{const b=document.createElement("button");b.className="bidbtn"+(cls?" "+cls:"")+(v===rec?" rec":"");b.textContent=lbl;b.onclick=()=>submitBid(v);return b;};
+  g.appendChild(mk("NIL",0,"nil"));for(let i=1;i<=13;i++)g.appendChild(mk(String(i),i));
 }
 function bidRationale(hand){
   const sp=hand.filter(c=>c.s==="S");const aces=hand.filter(c=>c.r===14).length;const ks=hand.filter(c=>c.r===13).length;
@@ -612,91 +630,95 @@ function bidRationale(hand){
   bits.push(sp.length+" spade"+(sp.length===1?"":"s"));
   return bits.join(", ");
 }
-function humanBid(){
-  return new Promise(res=>{
-    const rec=estimateBid(S.hands[0]);
-    $("actionbar").innerHTML=
-      `<div class="coach"><span class="ico">🧠</span><span class="txt"><b>Your call.</b> ${bidRationale(S.hands[0])} → worth about <span class="li">${rec}</span> trick${rec===1?"":"s"}. <b>NIL</b> = bet on zero (+100 / −100).</span></div>`+
-      `<div class="bidgrid" id="bg"></div>`;
-    const g=$("bg");
-    const mk=(lbl,v,cls)=>{const b=document.createElement("button");b.className="bidbtn"+(cls?" "+cls:"")+(v===rec?" rec":"");b.textContent=lbl;
-      b.onclick=()=>{S.bids[0]=v;Sound.bid();renderPills();$("actionbar").innerHTML="";res();};return b;};
-    g.appendChild(mk("NIL",0,"nil"));for(let i=1;i<=13;i++)g.appendChild(mk(String(i),i));
-  });
+async function submitBid(v){
+  S.bids[0]=v; Sound.bid(); renderPills(); $("actionbar").innerHTML=""; setActive(-1);
+  let st; try{ st=await NET("bid",{gameId:S.gameId,bid:v}); }
+  catch(e){ $("actionbar").innerHTML=`<div class="coach warn"><span class="ico">⚠️</span><span class="txt">Connection hiccup — tap your bid again.</span></div>`; beginBidding(); return; }
+  applyState(st);
+  await animateNewPlays([], S.trick);   // bots leading before your turn
+  enterPlayTurn();
 }
-
-async function startPlay(){
-  S.phase="play";renderHand();
-  for(let t=0;t<13;t++)await playTrick();
-  endRound();
-}
-async function playTrick(){
-  S.trick=[];
-  let seat=S.leader;
-  for(let i=0;i<4;i++){
-    setActive(seat);
-    if(seat===0){setPrompt(S.trick.length===0?"your lead":"your turn");renderHand();const card=await humanPlay();await commitPlay(seat,card);}
-    else{setPrompt(PLAYER_NAMES[seat]+" thinking…");await wait(560);const card=aiChooseCard(seat,S.hands[seat],S.trick,S.spadesBroken,S.bids);await commitPlay(seat,card);}
-    seat=nextSeat(seat);
+// fly in the bot cards that appear in `now` but weren't in `prev`, one at a time
+async function animateNewPlays(prev, now){
+  for(let i=prev.length;i<now.length;i++){
+    const t=now[i]; setActive(t.seat); setPrompt(PLAYER_NAMES[t.seat]+" plays…");
+    await flyToTrick(t.seat,t.card,null); Sound.play();
+    renderPartialTrick(now.slice(0,i+1)); await wait(170);
   }
-  setPrompt("");
-  await wait(260);
-  const w=trickWinner(S.trick);highlightWinner(w);S.tricks[w]++;Sound.trick();renderPills();
-  await wait(620);await sweepTrick(w);
-  S.leader=w;
 }
-async function commitPlay(seat,card){
-  const h=S.hands[seat];const idx=h.findIndex(c=>c.s===card.s&&c.r===card.r);
-  let fromRect=null;
-  if(seat===0&&idx>=0){const el=$("hand").children[idx];if(el)fromRect=el.getBoundingClientRect();}
-  if(idx>=0)h.splice(idx,1);
-  if(card.s==="S"&&!S.spadesBroken){S.spadesBroken=true;$("trumpNote").textContent="♠ broken";}
-  if(seat===0)renderHand();
-  Sound.play();
-  await flyToTrick(seat,card,fromRect);
-  S.trick.push({seat,card});
-  renderTrick();
+function renderPartialTrick(cards){
+  const wrap=$("trick");wrap.innerHTML="";
+  const pos={0:"t-S",1:"t-W",2:"t-N",3:"t-E"};
+  for(const t of cards){const d=document.createElement("div");d.className="tcard "+pos[t.seat];d.dataset.seat=t.seat;
+    d.innerHTML=`<span class="cs ${suitClass(t.card.s)}">${rankLabel(t.card.r)}${SUIT_SYM[t.card.s]}</span>`;wrap.appendChild(d);}
 }
-function humanPlay(){
-  return new Promise(res=>{
-    S.resolve=res;renderHand();
-    $("hintBtn").classList.remove("hidden");
-    if(legalMoves(S.hands[0],S.trick,S.spadesBroken).length===1)setPrompt("only one legal play");
-  });
+function enterPlayTurn(){
+  if(S.phase!=="play") return;
+  setActive(0); S.resolve=1;
+  setPrompt(S.trick.length===0?"your lead":"your turn");
+  renderHand(); $("hintBtn").classList.remove("hidden");
+  if(legalMoves(S.hands[0],S.trick,S.spadesBroken).length===1) setPrompt("only one legal play");
 }
 function onCardClick(card,el){
   if(S.phase!=="play"||!S.resolve)return;
   const legal=legalMoves(S.hands[0],S.trick,S.spadesBroken);
   if(!legal.some(c=>c.s===card.s&&c.r===card.r)){explainIllegal(card);Sound.illegal();return;}
-  const r=S.resolve;S.resolve=null;$("hintBtn").classList.add("hidden");clearCoach();
-  r(card);
+  S.resolve=null;$("hintBtn").classList.add("hidden");clearCoach();
+  submitPlay(card,el);
+}
+async function submitPlay(card,el){
+  setActive(0);
+  const fromRect = el?el.getBoundingClientRect():null;
+  const idx=S.hands[0].findIndex(c=>c.s===card.s&&c.r===card.r);
+  if(idx>=0)S.hands[0].splice(idx,1);
+  if(card.s==="S"&&!S.spadesBroken){S.spadesBroken=true;$("trumpNote").textContent="♠ broken";}
+  renderHand();
+  const shown=S.trick.concat([{seat:0,card}]);
+  Sound.play(); await flyToTrick(0,card,fromRect); renderPartialTrick(shown);
+  let st; try{ st=await NET("play",{gameId:S.gameId,card}); }
+  catch(e){ setPrompt("connection hiccup — tap the card again"); S.resolve=1; renderHand(); return; }
+  await applyPlayResult(shown, st);
+}
+async function applyPlayResult(shown, st){
+  // finish the just-completed trick: fly in the bots that played after you
+  if(st.lastTrick){
+    const full=st.lastTrick.cards;
+    for(let i=shown.length;i<full.length;i++){
+      const t=full[i]; setActive(t.seat); setPrompt(PLAYER_NAMES[t.seat]+" plays…");
+      await flyToTrick(t.seat,t.card,null); Sound.play(); renderPartialTrick(full.slice(0,i+1)); await wait(160);
+    }
+    setPrompt(""); S.tricks=st.tricks;
+    highlightWinner(st.lastTrick.winner); Sound.trick(); renderPills();
+    await wait(560); await sweepTrick(st.lastTrick.winner);
+  }
+  applyState(st); renderScores(); renderPills();
+  if(S.phase==="over") return gameOverFlow();
+  if(st.roundResult){
+    const yd=st.roundResult.teamDelta[0], od=st.roundResult.teamDelta[1];
+    const ym=(yd>=0?"+":"")+yd, om=(od>=0?"+":"")+od;
+    $("actionbar").innerHTML=`<div class="status">Round ${st.roundResult.round}: you ${ym} · opp ${om} — dealing next…</div>`;
+    $("rnd").textContent="Round "+S.round; $("trumpNote").textContent="♠ trump";
+    $("trick").innerHTML=""; await wait(1500);
+    renderHandDeal(); setTimeout(beginBidding,640); return;
+  }
+  await animateNewPlays([], S.trick);   // next trick's lead bots
+  enterPlayTurn();
+}
+function gameOverFlow(){
+  S.phase="over"; const won=S.won; won?Sound.win():Sound.lose(); try{Econ.onGame(won);}catch(e){}
+  $("overKick").textContent=won?"Winner winner":"Tough beat";
+  const t=$("overTitle");t.textContent=won?"You ran it ♠":"House takes it";t.className=won?"result-win":"result-lose";
+  $("overSub").innerHTML=`Final — You <b style="color:var(--lime)">${S.score[0]}</b> · Opponents <b style="color:var(--hot)">${S.score[1]}</b>`;
+  $("overOk").textContent=S.handle?("On the board as "+S.handle+" ♠"):"Set a tag next time to post your record.";
+  $("over").classList.remove("hidden");
 }
 function explainIllegal(card){
-  let why="Can't play that.";
-  if(S.trick.length===0){if(card.s==="S"&&!S.spadesBroken)why="Spades aren't broken yet — lead another suit first.";}
+  let why="Cannot play that.";
+  if(S.trick.length===0){if(card.s==="S"&&!S.spadesBroken)why="Spades are not broken yet — lead another suit first.";}
   else{const led=S.trick[0].card.s;if(card.s!==led&&S.hands[0].some(c=>c.s===led))why="You must follow "+SUIT_SYM[led]+" — you still have one.";}
   $("actionbar").innerHTML=`<div class="coach warn"><span class="ico">⛔</span><span class="txt">${why}</span></div>`;
 }
 function clearCoach(){$("actionbar").innerHTML="";}
-
-function endRound(){
-  const r=scoreRound(S.bids,S.tricks);
-  S.score[0]+=r.teamDelta[0];S.score[1]+=r.teamDelta[1];
-  for(const t of[0,1]){S.bags[t]+=r.bagDelta[t];while(S.bags[t]>=10){S.bags[t]-=10;S.score[t]-=100;}}
-  renderScores();Econ.onRound(r,S);
-  const ym=(r.teamDelta[0]>=0?"+":"")+r.teamDelta[0],om=(r.teamDelta[1]>=0?"+":"")+r.teamDelta[1];
-  $("actionbar").innerHTML=`<div class="status">Round ${S.round}: you ${ym} · opp ${om} — dealing next…</div>`;
-  if((S.score[0]>=500||S.score[1]>=500)&&S.score[0]!==S.score[1])return setTimeout(gameOver,900);
-  setTimeout(dealRound,1700);
-}
-function gameOver(){
-  S.phase="over";const won=S.score[0]>S.score[1];won?Sound.win():Sound.lose();Econ.onGame(won);
-  $("overKick").textContent=won?"Winner winner":"Tough beat";
-  const t=$("overTitle");t.textContent=won?"You ran it ♠":"House takes it";t.className=won?"result-win":"result-lose";
-  $("overSub").innerHTML=`Final — You <b style="color:var(--lime)">${S.score[0]}</b> · Opponents <b style="color:var(--hot)">${S.score[1]}</b>`;
-  $("overOk").textContent=S.handle?("On the list as "+S.handle+" — you're on the board."):"";
-  $("over").classList.remove("hidden");
-}
 
 /* ============================================================
    RENDER
@@ -877,14 +899,19 @@ function openCheckin(){
   else{$("ciClaim").classList.add("hidden");$("ciSub").textContent="Locked in for today 🔥 Come back tomorrow to keep the streak alive.";}
   $("checkin").classList.remove("hidden");
 }
-function openLeaderboard(){
-  const list=Econ.board(),pIdx=list.findIndex(e=>e.me),wrap=$("lbList");
-  const row=(e,r)=>`<div class="lb-row${e.me?' lb-you':''}"><span class="lb-rank">${r}</span><span class="lb-h">${e.h}${e.me?' (you)':''}</span><span class="lb-s">${Econ.fmtChips(e.s)} 💎</span></div>`;
-  wrap.innerHTML=list.slice(0,8).map((e,i)=>row(e,i+1)).join("");
-  if(pIdx>=8)wrap.innerHTML+=`<div class="lb-row" style="opacity:.45;justify-content:center">· · ·</div>`+row(list[pIdx],pIdx+1);
-  $("lbSeason").textContent="Season "+Econ.data().seasonId+" · Lvl "+Econ.level();
-  $("lbEnds").textContent=Econ.seasonEnds()+"d";
-  $("leaderboard").classList.remove("hidden");
+function openLeaderboard(){ openLeaderboardAsync(); }
+async function openLeaderboardAsync(){
+  const wrap=$("lbList"); $("leaderboard").classList.remove("hidden");
+  wrap.innerHTML='<div class="lb-row" style="justify-content:center;opacity:.6">loading the board…</div>';
+  let data; try{ data=await NET("top"); }catch(e){ data=null; }
+  const top=(data&&data.top)||[];
+  const me=(S.handle||loadHandle()||"").toLowerCase();
+  if(!top.length){ wrap.innerHTML='<div class="lb-row" style="justify-content:center;opacity:.6">No games yet — win one to land on the board ♠</div>'; }
+  else{
+    const row=(e,r)=>`<div class="lb-row${e.handle===me?' lb-you':''}"><span class="lb-rank">${r}</span><span class="lb-h">${e.handle}${e.handle===me?' (you)':''}</span><span class="lb-s">${e.wins}W · ${e.net>=0?'+':''}${e.net}</span></div>`;
+    wrap.innerHTML=top.map((e,i)=>row(e,i+1)).join("");
+  }
+  $("lbSeason").textContent="Live · server-ranked"; $("lbEnds").textContent="—";
 }
 let featuredOn=false;
 function initSponsor(){const sp=CONFIG.sponsor,b=$("sponsorBanner");if(!sp||!sp.active){b.classList.add("hidden");return;}
@@ -899,7 +926,7 @@ function toggleFeatured(){const sp=CONFIG.sponsor;featuredOn=!featuredOn;
 /* ============================================================
    BOOT
    ============================================================ */
-function startNewGame(){Sound.init();$("intro").classList.add("hidden");$("over").classList.add("hidden");$("tut").classList.add("hidden");freshGame();dealRound();if(Econ.checkinState().claimable)setTimeout(openCheckin,500);}
+function startNewGame(){Sound.init();$("intro").classList.add("hidden");$("over").classList.add("hidden");$("tut").classList.add("hidden");freshGame();startGameFlow();if(Econ.checkinState().claimable)setTimeout(openCheckin,500);}
 $("playBtn").onclick=async()=>{Sound.init();const h=$("handle").value.trim();if(h){await capture(h);$("introOk").textContent="You're in, "+h+" ♠";}startNewGame();};
 $("learnBtn").onclick=()=>{Sound.init();startTut();};
 $("againBtn").onclick=()=>startNewGame();
