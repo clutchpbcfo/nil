@@ -926,7 +926,7 @@ function toggleFeatured(){const sp=CONFIG.sponsor;featuredOn=!featuredOn;
 /* ============================================================
    BOOT
    ============================================================ */
-function startNewGame(){Sound.init();$("intro").classList.add("hidden");$("over").classList.add("hidden");$("tut").classList.add("hidden");freshGame();startGameFlow();if(Econ.checkinState().claimable)setTimeout(openCheckin,500);}
+function startNewGame(){Sound.init();$("intro").classList.add("hidden");$("over").classList.add("hidden");$("tut").classList.add("hidden");freshGame();startGameFlow();}
 $("playBtn").onclick=async()=>{Sound.init();const h=$("handle").value.trim();if(h){await capture(h);$("introOk").textContent="You're in, "+h+" ♠";}startNewGame();};
 $("learnBtn").onclick=()=>{Sound.init();startTut();};
 $("againBtn").onclick=()=>startNewGame();
