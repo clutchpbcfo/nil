@@ -556,7 +556,7 @@ function aiChooseCard(seat,hand,trick,spadesBroken,bids){
    ============================================================ */
 const Sound=(()=>{
   let ctx,muted=false;try{muted=localStorage.getItem("kw_mute")==="1";}catch(e){}
-  const ensure=()=>{if(!ctx){try{ctx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}if(ctx&&ctx.state==="suspended")ctx.resume();};
+  const ensure=()=>{try{if(!ctx){ctx=new(window.AudioContext||window.webkitAudioContext)();}if(ctx&&ctx.state==="suspended")ctx.resume();}catch(e){}};
   const tone=(f,d,type,g)=>{if(muted)return;ensure();if(!ctx)return;try{const o=ctx.createOscillator(),ga=ctx.createGain();o.type=type;o.frequency.value=f;o.connect(ga);ga.connect(ctx.destination);const t=ctx.currentTime;ga.gain.setValueAtTime(g,t);ga.gain.exponentialRampToValueAtTime(.0001,t+d);o.start(t);o.stop(t+d);}catch(e){}};
   return{
     init:ensure,
@@ -614,7 +614,8 @@ async function startGameFlow(){
 }
 async function beginBidding(){
   S.resolve=null; renderPills();
-  for(const seat of [1,2,3]){ setActive(seat); Sound.bid(); await wait(300); }   // bots locked their bids
+  for(const seat of [1,2,3]){ setActive(seat); setPrompt(PLAYER_NAMES[seat]+" is counting the table…"); await wait(260+Math.random()*340); Sound.bid(); }   // bots locked their bids — varied beats read as thought
+  setPrompt("");
   setActive(0);
   const rec=estimateBid(S.hands[0]);
   $("actionbar").innerHTML=
@@ -643,7 +644,7 @@ async function animateNewPlays(prev, now){
   for(let i=prev.length;i<now.length;i++){
     const t=now[i]; setActive(t.seat); setPrompt(PLAYER_NAMES[t.seat]+" plays…");
     await flyToTrick(t.seat,t.card,null); Sound.play();
-    renderPartialTrick(now.slice(0,i+1)); await wait(170);
+    renderPartialTrick(now.slice(0,i+1)); await wait(140+Math.random()*240);
   }
 }
 function renderPartialTrick(cards){
@@ -685,7 +686,7 @@ async function applyPlayResult(shown, st){
     const full=st.lastTrick.cards;
     for(let i=shown.length;i<full.length;i++){
       const t=full[i]; setActive(t.seat); setPrompt(PLAYER_NAMES[t.seat]+" plays…");
-      await flyToTrick(t.seat,t.card,null); Sound.play(); renderPartialTrick(full.slice(0,i+1)); await wait(160);
+      await flyToTrick(t.seat,t.card,null); Sound.play(); renderPartialTrick(full.slice(0,i+1)); await wait(140+Math.random()*240);
     }
     setPrompt(""); S.tricks=st.tricks;
     highlightWinner(st.lastTrick.winner); Sound.trick(); renderPills();
@@ -696,9 +697,13 @@ async function applyPlayResult(shown, st){
   if(st.roundResult){
     const yd=st.roundResult.teamDelta[0], od=st.roundResult.teamDelta[1];
     const ym=(yd>=0?"+":"")+yd, om=(od>=0?"+":"")+od;
-    $("actionbar").innerHTML=`<div class="status">Round ${st.roundResult.round}: you ${ym} · opp ${om} — dealing next…</div>`;
+    const lead=S.score[0]-S.score[1];
+    const mood= yd>od ? "Your side takes the hand." : yd<od ? "Their hand." : "Dead even hand.";
+    const race= lead>0 ? `You lead by ${lead}.` : lead<0 ? `They lead by ${-lead}.` : "All square.";
+    const bagWarn = S.bags[0]>=7 ? ` ⚠️ ${S.bags[0]} bags — 10 costs you 100.` : "";
+    $("actionbar").innerHTML=`<div class="status"><b>Hand ${st.roundResult.round}:</b> you ${ym} · opp ${om}. ${mood} ${race}${bagWarn} — dealing…</div>`;
     $("rnd").textContent="Round "+S.round; $("trumpNote").textContent="♠ trump";
-    $("trick").innerHTML=""; await wait(1500);
+    $("trick").innerHTML=""; await wait(2100);
     renderHandDeal(); setTimeout(beginBidding,640); return;
   }
   await animateNewPlays([], S.trick);   // next trick's lead bots
@@ -708,9 +713,15 @@ function gameOverFlow(){
   S.phase="over"; const won=S.won; won?Sound.win():Sound.lose(); try{Econ.onGame(won);}catch(e){}
   $("overKick").textContent=won?"Winner winner":"Tough beat";
   const t=$("overTitle");t.textContent=won?"You ran it ♠":"House takes it";t.className=won?"result-win":"result-lose";
-  $("overSub").innerHTML=`Final — You <b style="color:var(--lime)">${S.score[0]}</b> · Opponents <b style="color:var(--hot)">${S.score[1]}</b>`;
+  const _ed=Econ.data(); $("overSub").innerHTML=`Final — You <b style="color:var(--lime)">${S.score[0]}</b> · Opponents <b style="color:var(--hot)">${S.score[1]}</b><br><span style="font-size:12px;color:var(--muted)">💎 ${Econ.fmtChips(_ed.chips)} banked · LV ${Econ.level()} · check-in streak ${_ed.streak||0}🔥</span>`;
   $("overOk").textContent=S.handle?("On the board as "+S.handle+" ♠"):"Set a tag next time to post your record.";
   $("over").classList.remove("hidden");
+  // pull the live board: show your rank right where the dopamine is
+  (async()=>{ try{ const d=await NET("top"); const top=(d&&d.top)||[]; if(!top.length) return;
+    const me=(S.handle||"").toLowerCase(); const idx=top.findIndex(e=>e.handle===me);
+    const line= idx>=0 ? `Server rank <b>#${idx+1}</b> · ${top[idx].wins}W` : `Board leader: <b>${top[0].handle}</b> · ${top[0].wins}W`;
+    const el=document.getElementById("overOk"); if(el) el.innerHTML = el.textContent + ' &middot; ' + line;
+  }catch(e){} })();
 }
 function explainIllegal(card){
   let why="Cannot play that.";
@@ -852,7 +863,7 @@ function renderTut(){
   }else{next.classList.remove("hidden");next.textContent=tutStep===TUT.length-1?"START PLAYING ▸":"NEXT ▸";}
 }
 function startTut(){tutStep=0;$("intro").classList.add("hidden");$("over").classList.add("hidden");$("tut").classList.remove("hidden");renderTut();}
-$("tutNext").onclick=()=>{Sound.init();if(tutStep>=TUT.length-1){$("tut").classList.add("hidden");startNewGame();}else{tutStep++;renderTut();}};
+$("tutNext").onclick=()=>{try{Sound.init();}catch(e){}if(tutStep>=TUT.length-1){$("tut").classList.add("hidden");startNewGame();}else{tutStep++;renderTut();}};
 $("tutSkip").onclick=()=>{$("tut").classList.add("hidden");startNewGame();};
 
 /* ============================================================
@@ -865,7 +876,6 @@ function toast(msg){const w=$("toasts");if(!w)return;const t=document.createElem
 const Econ=(()=>{
   const KEY="kw_econ_v1";
   const REWARDS=[50,75,100,150,200,300,500];
-  const SEED=[{h:"0xChad",s:4200},{h:"gmSer",s:3650},{h:"pepe_whale",s:3120},{h:"spadeRunner",s:2740},{h:"diamondHandz",s:2210},{h:"degenDan",s:1850},{h:"moonboy",s:1410},{h:"exitliquidity",s:980}];
   const today=()=>new Date().toISOString().slice(0,10);
   const yday=()=>new Date(Date.now()-864e5).toISOString().slice(0,10);
   function seasonId(){const dt=new Date();const o=new Date(Date.UTC(dt.getFullYear(),dt.getMonth(),dt.getDate()));const dy=(o.getUTCDay()+6)%7;o.setUTCDate(o.getUTCDate()-dy+3);const w1=new Date(Date.UTC(o.getUTCFullYear(),0,4));const wk=1+Math.round(((o-w1)/864e5-3+((w1.getUTCDay()+6)%7))/7);return o.getUTCFullYear()+"-W"+String(wk).padStart(2,"0");}
@@ -877,14 +887,13 @@ const Econ=(()=>{
   function award(chips,xp,reason){if(chips)d.chips+=chips;if(xp)d.xp+=xp;if(chips>0)d.seasonScore+=chips;save();renderChips();if(chips>0)toast("+"+chips+" 💎"+(reason?" · "+reason:""));}
   function checkinState(){if(d.lastCheckin===today())return{claimable:false,day:Math.max(d.streak,1)};const day=(d.lastCheckin===yday())?(d.streak%7)+1:1;return{claimable:true,day};}
   function claim(){const st=checkinState();if(!st.claimable)return null;d.streak=(d.lastCheckin===yday())?d.streak+1:1;d.lastCheckin=today();const amt=REWARDS[Math.min(st.day-1,6)];award(amt,20,"day "+st.day);return{amt,day:st.day};}
-  function board(){return SEED.map(x=>({...x})).concat([{h:d.handle||"you",s:d.seasonScore,me:true}]).sort((a,b)=>b.s-a.s);}
   function seasonEnds(){return 6-((new Date().getUTCDay()+6)%7);}
   return{
     init(){if(!d.handle)d.handle=loadHandle();const s=seasonId();if(d.seasonId!==s){if(d.seasonScore>d.allTime)d.allTime=d.seasonScore;d.seasonId=s;d.seasonScore=0;}save();renderChips();},
     setHandle(h){d.handle=h;save();},
     onRound(r,S){if(r.teamDelta[0]>0)award(r.teamDelta[0],10,"round won");if(S.bids[0]===0&&S.tricks[0]===0)award(100,30,"NIL HIT ♠");},
     onGame(won){if(won)award(500,200,"GAME WON");else{d.xp+=50;save();}},
-    data:()=>d,level:()=>1+Math.floor(d.xp/200),checkinState,claim,board,seasonEnds,fmtChips,renderChips
+    data:()=>d,level:()=>1+Math.floor(d.xp/200),checkinState,claim,seasonEnds,fmtChips,renderChips
   };
 })();
 
@@ -926,9 +935,9 @@ function toggleFeatured(){const sp=CONFIG.sponsor;featuredOn=!featuredOn;
 /* ============================================================
    BOOT
    ============================================================ */
-function startNewGame(){Sound.init();$("intro").classList.add("hidden");$("over").classList.add("hidden");$("tut").classList.add("hidden");freshGame();startGameFlow();}
-$("playBtn").onclick=async()=>{Sound.init();const h=$("handle").value.trim();if(h){await capture(h);$("introOk").textContent="You're in, "+h+" ♠";}startNewGame();};
-$("learnBtn").onclick=()=>{Sound.init();startTut();};
+function startNewGame(){$("intro").classList.add("hidden");$("over").classList.add("hidden");$("tut").classList.add("hidden");freshGame();startGameFlow();try{Sound.init();}catch(e){}}
+$("playBtn").onclick=async()=>{const btn=$("playBtn");btn.textContent="SHUFFLING…";btn.disabled=true;try{const h=$("handle").value.trim();if(h){try{await capture(h);$("introOk").textContent="You're in, "+h+" ♠";}catch(e){}}startNewGame();}finally{btn.textContent="DEAL ME IN ▸";btn.disabled=false;}};
+$("learnBtn").onclick=()=>{startTut();try{Sound.init();}catch(e){}};
 $("againBtn").onclick=()=>startNewGame();
 $("helpBtn").onclick=()=>startTut();
 $("soundBtn").onclick=()=>{const m=Sound.toggle();$("soundBtn").textContent=m?"🔇":"🔊";if(!m)Sound.play();};
