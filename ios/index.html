@@ -393,7 +393,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 
   <div id="foot">
     NIL &spades; a pure skill card game<br>
-    <a id="footTg" href="#" target="_blank" rel="noopener">▸ back to the arcade</a> · <a id="footSite" href="#" target="_blank" rel="noopener">@ClutchPBCFO</a>
+    <a id="footTg" href="#" target="_blank" rel="noopener">▸ reachfi.network</a> · <a id="footSite" href="#" target="_blank" rel="noopener">@ClutchPBCFO</a>
   </div>
 </div>
 
@@ -438,8 +438,8 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
     <p id="overSub"></p>
     <div class="ok" id="overOk"></div>
     <button class="btn btn-lime" id="againBtn">RUN IT BACK</button>
-    <a class="btn btn-ghost" id="overTg" href="#" target="_blank" rel="noopener" style="text-decoration:none">▸ BACK TO THE ARCADE</a>
-    <div class="links"><a id="overX" href="#" target="_blank" rel="noopener">@ClutchPBCFO</a><a id="overSite" href="#" target="_blank" rel="noopener">more games ▸</a></div>
+    <a class="btn btn-ghost" id="overTg" href="#" target="_blank" rel="noopener" style="text-decoration:none;display:none">▸ REACH FI</a>
+    <div class="links"><a id="overX" href="#" target="_blank" rel="noopener">@ClutchPBCFO</a><a id="overSite" href="#" target="_blank" rel="noopener">reachfi.network</a></div>
   </div>
 </div>
 
@@ -486,9 +486,9 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
    ============================================================ */
 const CONFIG = {
   // INSERT COIN arcade — the arcade chat sets these when wiring NIL in.
-  arcadeUrl:   "https://clutchpbcfo.github.io/arcade-shell/",  // back-to-arcade link
+  arcadeUrl:   "https://reachfi.network/",  // brand site
   xUrl:        "https://x.com/ClutchPBCFO",
-  siteUrl:     "https://clutchpbcfo.github.io/arcade-shell/",  // arcade / more games
+  siteUrl:     "https://reachfi.network/",  // brand site
   spaceUrl:    "",
   captureEndpoint: "",                    // optional: POST {handle,ts,source} → leaderboard backend
   apiBase: "https://nil-api.clutchpbcfo.workers.dev", // NIL online tables API (one const)
@@ -499,7 +499,7 @@ const CONFIG = {
   const arcade=CONFIG.arcadeUrl||CONFIG.siteUrl||"#";
   s("footTg",arcade);s("footSite",CONFIG.xUrl);s("introTg",arcade);s("introX",CONFIG.xUrl);s("introSite",arcade);
   s("overTg",arcade);s("overX",CONFIG.xUrl);s("overSite",arcade);
-  const pn=document.getElementById("pillNote");if(pn)pn.textContent="part of INSERT COIN · more games inside ▸";
+  const pn=document.getElementById("pillNote");if(pn)pn.textContent="one daily seed · everyone plays it";
 })();
 
 /* PURE GAME LOGIC — explicit args, DOM-free, unit-tested */
